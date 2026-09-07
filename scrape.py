@@ -77,7 +77,10 @@ def jinhak(page):
 
 
 def uway(page):
-    page.goto(UWAY_URL, wait_until='domcontentloaded', timeout=45000)
+    page.goto(url, wait_until="domcontentloaded", timeout=120000)
+page.wait_for_timeout(15000)
+page.reload(wait_until="domcontentloaded", timeout=120000)
+page.wait_for_timeout(15000)
     page.wait_for_timeout(3000)
     if not wait_for_real_content(page, UWAY_TARGET, 20000):
         raise RuntimeError(f'유웨이 대상 행을 찾지 못했습니다 (title={page.title()!r})')
