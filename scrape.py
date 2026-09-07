@@ -3,18 +3,23 @@ import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from playwright.sync_api import (
-    sync_playwright,
-    TimeoutError as PlaywrightTimeoutError,
-)
+import requests
+from bs4 import BeautifulSoup
 
 
 # =========================
 # 기본 설정
 # =========================
 
-JINHAK_URL = "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio10810661.html"
-UWAY_URL = "https://ratio.uwayapply.com/Sl5KQzphYCZNOFdKZiUmOiZKN2ZUZg=="
+JINHAK_URL = (
+    "https://addon.jinhakapply.com/"
+    "RatioV1/RatioH/Ratio10810661.html"
+)
+
+UWAY_URL = (
+    "https://ratio.uwayapply.com/"
+    "Sl5KQzphYCZNOFdKZiUmOiZKN2ZUZg=="
+)
 
 KST = timezone(timedelta(hours=9))
 
@@ -24,10 +29,10 @@ ARTIFACTS = ROOT / "artifacts"
 
 
 # =========================
-# 진학어플라이 설정
+# 진학어플라이
 # =========================
 
-JINHAK_TARGET = "계약학과 채용조건형 특별전형 경쟁률 현황"
+JINHAK_TARGET = "계약학과 채용조건형 특별전형"
 
 JINHAK_NAMES = [
     "헤어디자인학과-㈜준오뷰티",
@@ -42,7 +47,7 @@ JINHAK_NAMES = [
 
 
 # =========================
-# 유웨이 설정
+# 유웨이
 # =========================
 
 UWAY_TARGET = "(충남형)리안헤어뷰티아트학과 미창조(주)리안헤어"
@@ -52,166 +57,178 @@ UWAY_TARGET = "(충남형)리안헤어뷰티아트학과 미창조(주)리안헤
 # 공통 함수
 # =========================
 
-def norm(s):
-    return re.sub(r"\s+", " ", s or "").strip()
+def norm(text):
+    return re.sub(r"\s+", " ", text or "").strip()
 
 
-def text_cells(tr):
-    return [
-        norm(c.inner_text())
-        for c in tr.locator("th,td").all()
-    ]
+def get_session():
+    session = requests.Session()
+
+    session.headers.update(
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/140.0.0.0 Safari/537.36"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,"
+                "application/xml;q=0.9,image/avif,"
+                "image/webp,*/*;q=0.8"
+            ),
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        }
+    )
+
+    return session
 
 
-def clean_cell(s):
-    return norm(s).replace("\u00a0", " ")
+def fetch_html(session, url):
+    print(f"페이지 요청: {url}")
 
+    response = session.get(
+        url,
+        timeout=60,
+        allow_redirects=True,
+    )
 
-def wait_for_real_content(page, target, timeout=20000):
-    try:
-        page.get_by_text(
-            target,
-            exact=False
-        ).first.wait_for(
-            state="visible",
-            timeout=timeout
-        )
-        return True
+    print(f"HTTP 상태코드: {response.status_code}")
+    print(f"최종 URL: {response.url}")
+    print(f"응답 길이: {len(response.text)}")
 
-    except PlaywrightTimeoutError:
-        return False
+    response.raise_for_status()
+
+    return response.text
 
 
 # =========================
 # 진학어플라이
 # =========================
 
-def jinhak(page):
+def jinhak(session):
 
-    print("진학어플라이 접속 시작")
+    print("")
+    print("===== 진학어플라이 =====")
 
-    page.goto(
-        JINHAK_URL,
-        wait_until="domcontentloaded",
-        timeout=120000
+    html = fetch_html(
+        session,
+        JINHAK_URL
     )
 
-    print("진학어플라이 최초 접속 완료")
-    print("보안 확인을 위해 15초 대기")
-
-    page.wait_for_timeout(15000)
-
-    print("진학어플라이 페이지 새로고침")
-
-    page.reload(
-        wait_until="domcontentloaded",
-        timeout=120000
+    soup = BeautifulSoup(
+        html,
+        "html.parser"
     )
 
-    print("새로고침 완료")
-    print("보안 확인을 위해 추가 15초 대기")
+    page_text = norm(
+        soup.get_text(" ", strip=True)
+    )
 
-    page.wait_for_timeout(15000)
+    # 보안 페이지인지 확인
+    security_words = [
+        "사람인지 확인",
+        "안전한 접속 확인",
+        "접속 환경을 확인하고 있습니다",
+        "잠시만 기다리십시오",
+    ]
 
-    # 실제 페이지가 나타나는지 확인
-    if not wait_for_real_content(
-        page,
-        JINHAK_TARGET,
-        20000
-    ):
+    security_found = [
+        word
+        for word in security_words
+        if word in page_text
+    ]
 
-        title = page.title()
+    if security_found:
 
-        try:
-            body = norm(
-                page.locator("body").inner_text()
-            )[:2000]
-        except Exception:
-            body = ""
-
-        print("진학어플라이 실제 페이지 확인 실패")
-        print(f"페이지 제목: {title}")
-        print(f"페이지 내용: {body}")
-
-        raise RuntimeError(
-            "진학어플라이 보안 페이지 또는 "
-            f"대상 표 미검출 "
-            f"(title={title!r}, body={body!r})"
+        print(
+            "진학어플라이 보안 페이지가 "
+            "응답되었습니다."
         )
 
-    print("진학어플라이 실제 페이지 확인 성공")
+        raise RuntimeError(
+            "진학어플라이가 GitHub Actions의 "
+            "HTTP 요청에 보안 확인 페이지를 반환했습니다: "
+            + ", ".join(security_found)
+        )
+
+    # 대상 전형 확인
+    if JINHAK_TARGET not in page_text:
+
+        raise RuntimeError(
+            "진학어플라이 페이지에서 "
+            f"'{JINHAK_TARGET}'을 찾지 못했습니다."
+        )
 
     rows = []
 
-    # =========================
-    # 표에서 데이터 찾기
-    # =========================
+    # 모든 table을 검사
+    for table in soup.find_all("table"):
 
-    tables = page.locator("table")
+        table_text = norm(
+            table.get_text(" ", strip=True)
+        )
 
-    print(f"페이지 내 table 개수: {tables.count()}")
+        # 계약학과 표가 아닌 경우 건너뜀
+        if JINHAK_TARGET not in table_text:
 
-    for i in range(tables.count()):
-
-        table = tables.nth(i)
-
-        try:
-            table_text = norm(
-                table.inner_text()
-            )
-        except Exception:
-            continue
-
-        if (
-            JINHAK_TARGET in table_text
-            or any(
+            # 표 안에 모집단위 이름이 있는 경우도 허용
+            if not any(
                 name in table_text
                 for name in JINHAK_NAMES
+            ):
+                continue
+
+        for tr in table.find_all("tr"):
+
+            cells = [
+                norm(td.get_text(" ", strip=True))
+                for td in tr.find_all(
+                    ["th", "td"]
+                )
+            ]
+
+            if len(cells) < 4:
+                continue
+
+            name = cells[0]
+
+            if name not in JINHAK_NAMES:
+                continue
+
+            rows.append(
+                {
+                    "name": name,
+                    "recruit": cells[1],
+                    "applicants": cells[2],
+                    "ratio": cells[3],
+                }
             )
-        ):
 
-            for tr in table.locator("tr").all():
-
-                cells = text_cells(tr)
-
-                if (
-                    len(cells) >= 4
-                    and cells[0] in JINHAK_NAMES
-                ):
-
-                    rows.append(
-                        {
-                            "name": cells[0],
-                            "recruit": cells[1],
-                            "applicants": cells[2],
-                            "ratio": cells[3],
-                        }
-                    )
-
-            if rows:
-                break
-
-    # =========================
-    # 표 검색 실패 시 전체 행 검색
-    # =========================
-
+    # 혹시 table 구조가 특이한 경우 전체 tr 검색
     if len(rows) < len(JINHAK_NAMES):
 
         print(
-            "표 검색으로 모든 모집단위를 찾지 못해 "
+            "표 단위 검색에서 일부 항목이 없어 "
             "전체 행을 다시 검색합니다."
         )
 
         rows = []
 
-        for tr in page.locator("tr").all():
+        for tr in soup.find_all("tr"):
 
-            cells = text_cells(tr)
+            cells = [
+                norm(td.get_text(" ", strip=True))
+                for td in tr.find_all(
+                    ["th", "td"]
+                )
+            ]
 
-            if (
-                len(cells) >= 4
-                and cells[0] in JINHAK_NAMES
-            ):
+            if len(cells) < 4:
+                continue
+
+            if cells[0] in JINHAK_NAMES:
 
                 rows.append(
                     {
@@ -222,9 +239,13 @@ def jinhak(page):
                     }
                 )
 
-    # =========================
-    # 누락 확인
-    # =========================
+    # 중복 제거
+    unique = {}
+
+    for row in rows:
+        unique[row["name"]] = row
+
+    rows = list(unique.values())
 
     found_names = {
         row["name"]
@@ -240,13 +261,28 @@ def jinhak(page):
     if missing:
 
         raise RuntimeError(
-            "진학어플라이 일부 모집단위를 찾지 못했습니다: "
+            "진학어플라이에서 다음 모집단위를 "
+            "찾지 못했습니다: "
             + ", ".join(missing)
         )
 
-    print(
-        f"진학어플라이 데이터 {len(rows)}개 확인 완료"
+    # 원하는 순서대로 정렬
+    rows.sort(
+        key=lambda row:
+        JINHAK_NAMES.index(row["name"])
     )
+
+    print(
+        f"진학어플라이 {len(rows)}개 항목 수집 완료"
+    )
+
+    for row in rows:
+        print(
+            f"{row['name']} | "
+            f"{row['recruit']} | "
+            f"{row['applicants']} | "
+            f"{row['ratio']}"
+        )
 
     return rows
 
@@ -255,52 +291,64 @@ def jinhak(page):
 # 유웨이
 # =========================
 
-def uway(page):
+def uway(session):
 
-    print("유웨이 접속 시작")
+    print("")
+    print("===== 유웨이 =====")
 
-    page.goto(
-        UWAY_URL,
-        wait_until="domcontentloaded",
-        timeout=120000
+    html = fetch_html(
+        session,
+        UWAY_URL
     )
 
-    page.wait_for_timeout(5000)
+    soup = BeautifulSoup(
+        html,
+        "html.parser"
+    )
 
-    if not wait_for_real_content(
-        page,
-        UWAY_TARGET,
-        20000
-    ):
+    page_text = norm(
+        soup.get_text(" ", strip=True)
+    )
+
+    if UWAY_TARGET not in page_text:
 
         raise RuntimeError(
-            "유웨이 대상 행을 찾지 못했습니다 "
-            f"(title={page.title()!r})"
+            "유웨이 페이지에서 "
+            f"'{UWAY_TARGET}'을 찾지 못했습니다."
         )
 
-    print("유웨이 실제 페이지 확인 성공")
+    for tr in soup.find_all("tr"):
 
-    for tr in page.locator("tr").all():
+        cells = [
+            norm(td.get_text(" ", strip=True))
+            for td in tr.find_all(
+                ["th", "td"]
+            )
+        ]
 
-        cells = text_cells(tr)
+        if UWAY_TARGET not in cells:
+            continue
 
-        if UWAY_TARGET in cells:
+        if len(cells) >= 6:
 
-            if len(cells) >= 6:
+            result = {
+                "name": cells[1],
+                "recruit": cells[3],
+                "applicants": cells[4],
+                "ratio": cells[5],
+            }
 
-                result = {
-                    "name": cells[1],
-                    "recruit": cells[3],
-                    "applicants": cells[4],
-                    "ratio": cells[5],
-                }
+            print(
+                "유웨이 데이터 수집 완료:"
+            )
 
-                print("유웨이 데이터 확인 완료")
+            print(result)
 
-                return result
+            return result
 
     raise RuntimeError(
-        "유웨이 리안헤어 항목을 찾지 못했습니다."
+        "유웨이 리안헤어 항목을 찾았지만 "
+        "필요한 데이터 열을 찾지 못했습니다."
     )
 
 
@@ -314,81 +362,47 @@ def main():
         exist_ok=True
     )
 
-    with sync_playwright() as p:
+    session = get_session()
 
-        print("Chromium 실행")
+    try:
 
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled"
-            ]
-        )
+        # 진학어플라이
+        j = jinhak(session)
 
-        context = browser.new_context(
+        # 유웨이
+        u = uway(session)
 
-            locale="ko-KR",
+    except Exception as error:
 
-            timezone_id="Asia/Seoul",
+        print("")
+        print("===== 스크래핑 실패 =====")
+        print(str(error))
 
-            viewport={
-                "width": 1440,
-                "height": 1000
-            },
-
-            user_agent=(
-                "Mozilla/5.0 "
-                "(Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/140.0.0.0 "
-                "Safari/537.36"
-            )
-        )
-
-        page = context.new_page()
-
+        # 실패한 HTML 저장
         try:
 
-            # 진학어플라이
-            j = jinhak(page)
+            debug_file = (
+                ARTIFACTS
+                / "failure.txt"
+            )
 
-            # 유웨이
-            u = uway(page)
+            debug_file.write_text(
+                str(error),
+                encoding="utf-8"
+            )
+
+            print(
+                "실패 내용을 "
+                f"{debug_file}에 저장했습니다."
+            )
 
         except Exception:
+            pass
 
-            print("스크래핑 실패")
-
-            try:
-
-                page.screenshot(
-                    path=str(
-                        ARTIFACTS / "failure.png"
-                    ),
-                    full_page=True
-                )
-
-                print(
-                    "실패 화면을 "
-                    "artifacts/failure.png에 저장했습니다."
-                )
-
-            except Exception as screenshot_error:
-
-                print(
-                    f"스크린샷 저장 실패: "
-                    f"{screenshot_error}"
-                )
-
-            raise
-
-        finally:
-
-            browser.close()
+        raise
 
     # =========================
-    # 현재 데이터 생성
+    # 현재 데이터
     # =========================
 
     current = {
@@ -405,26 +419,26 @@ def main():
                 "id": "jinhak",
                 "label": "진학어플라이",
                 "url": JINHAK_URL,
-                "note": JINHAK_TARGET
+                "note": JINHAK_TARGET,
             },
 
             {
                 "id": "uway",
                 "label": "유웨이",
                 "url": UWAY_URL,
-                "note": UWAY_TARGET
-            }
+                "note": UWAY_TARGET,
+            },
         ],
 
         "jinhak": j,
 
         "uway": [
             u
-        ]
+        ],
     }
 
     # =========================
-    # 기존 데이터 읽기
+    # 기존 데이터
     # =========================
 
     old = None
@@ -458,109 +472,82 @@ def main():
     )
 
     # =========================
-    # 진학어플라이 변경 여부
+    # 변경 여부
     # =========================
 
-    for x in current["jinhak"]:
+    for row in current["jinhak"]:
 
-        ox = next(
+        old_row = next(
             (
-                z
-                for z in jold
-                if z.get("name")
-                == x.get("name")
+                item
+                for item in jold
+                if item.get("name")
+                == row.get("name")
             ),
-            None
+            None,
         )
 
-        x["changed"] = bool(
-
-            ox
-
+        row["changed"] = bool(
+            old_row
             and {
-
                 k: v
-                for k, v in ox.items()
+                for k, v in old_row.items()
                 if k != "changed"
-
             }
-
             != {
-
                 k: v
-                for k, v in x.items()
+                for k, v in row.items()
                 if k != "changed"
-
             }
         )
 
-    # =========================
-    # 유웨이 변경 여부
-    # =========================
+    for row in current["uway"]:
 
-    for x in current["uway"]:
-
-        ox = next(
+        old_row = next(
             (
-                z
-                for z in uold
-                if z.get("name")
-                == x.get("name")
+                item
+                for item in uold
+                if item.get("name")
+                == row.get("name")
             ),
-            None
+            None,
         )
 
-        x["changed"] = bool(
-
-            ox
-
+        row["changed"] = bool(
+            old_row
             and {
-
                 k: v
-                for k, v in ox.items()
+                for k, v in old_row.items()
                 if k != "changed"
-
             }
-
             != {
-
                 k: v
-                for k, v in x.items()
+                for k, v in row.items()
                 if k != "changed"
-
             }
         )
-
-    # =========================
-    # changed 제외 비교
-    # =========================
 
     def values(rows):
 
         return [
-
             {
                 k: v
-                for k, v in x.items()
+                for k, v in row.items()
                 if k != "changed"
             }
-
-            for x in rows
+            for row in rows
         ]
 
     current["changed"] = (
-
         old is None
-
         or values(jold)
         != values(current["jinhak"])
-
         or values(uold)
         != values(current["uway"])
     )
 
     # =========================
-    # 파일 저장
+    # 저장
     # =========================
 
     DATA.parent.mkdir(
@@ -568,15 +555,16 @@ def main():
     )
 
     DATA.write_text(
-
         json.dumps(
             current,
             ensure_ascii=False,
             indent=2
         ),
-
         encoding="utf-8"
     )
+
+    print("")
+    print("===== 최종 데이터 =====")
 
     print(
         json.dumps(
@@ -586,10 +574,6 @@ def main():
         )
     )
 
-
-# =========================
-# 실행
-# =========================
 
 if __name__ == "__main__":
     main()
