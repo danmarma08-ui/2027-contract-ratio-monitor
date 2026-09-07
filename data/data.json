@@ -1,0 +1,21 @@
+{
+  "updated_at": "2026-09-07 15:00:00",
+  "changed": true,
+  "sources": [
+    {"id":"jinhak","label":"진학어플라이","url":"https://addon.jinhakapply.com/RatioV1/RatioH/Ratio10810661.html","note":"계약학과 채용조건형 특별전형"},
+    {"id":"uway","label":"유웨이","url":"https://ratio.uwayapply.com/Sl5KQzphYCZNOFdKZiUmOiZKN2ZUZg==","note":"(충남형) 리안헤어뷰티아트학과 / 미창조(주) 리안헤어"}
+  ],
+  "jinhak": [
+    {"name":"헤어디자인학과-㈜준오뷰티","recruit":"78","applicants":"72","ratio":"0.92 : 1"},
+    {"name":"헤어디자인학과-㈜피엔제이","recruit":"40","applicants":"48","ratio":"1.20 : 1"},
+    {"name":"헤어디자인학과-㈜뷰티끄레아","recruit":"30","applicants":"41","ratio":"1.37 : 1"},
+    {"name":"헤어디자인학과-미창조㈜","recruit":"20","applicants":"38","ratio":"1.90 : 1"},
+    {"name":"헤어디자인학과-㈜커커","recruit":"20","applicants":"36","ratio":"1.80 : 1"},
+    {"name":"헤어디자인학과-㈜브이오지코리아","recruit":"20","applicants":"20","ratio":"1.00 : 1"},
+    {"name":"코스메틱뷰티매니지먼트학과-㈜블리비홀딩스","recruit":"30","applicants":"15","ratio":"0.50 : 1"},
+    {"name":"코스메틱뷰티매니지먼트학과-㈜뷰티라운지","recruit":"15","applicants":"16","ratio":"1.07 : 1"}
+  ],
+  "uway": [
+    {"name":"(충남형)리안헤어뷰티아트학과 미창조(주)리안헤어","recruit":"30","applicants":"6","ratio":"0.20 : 1"}
+  ]
+}
