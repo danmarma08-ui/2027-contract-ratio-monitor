@@ -43,39 +43,101 @@ def wait_for_real_content(page, target, timeout=20000):
 
 
 def jinhak(page):
-    page.goto(JINHAK_URL, wait_until='domcontentloaded', timeout=45000)
-    page.wait_for_timeout(5000)
-    if not wait_for_real_content(page, JINHAK_TARGET, 20000):
-        title=page.title()
-        body=norm(page.locator('body').inner_text())[:1000]
-        raise RuntimeError(f'진학어플라이 보안 페이지 또는 대상 표 미검출 (title={title!r}, body={body!r})')
+    page.goto(JINHAK_URL, wait_until='domcontentloaded', timeout=120000)
 
-    rows=[]
-    # Find the table containing the target heading. The exact markup can change, so search all tables.
-    tables=page.locator('table')
+    # 진학어플라이 보안 확인 페이지가 실제 페이지로 넘어갈 시간을 줌
+    page.wait_for_timeout(15000)
+
+    # 한 번 새로고침
+    page.reload(wait_until='domcontentloaded', timeout=120000)
+    page.wait_for_timeout(15000)
+
+    if not wait_for_real_content(page, JINHAK_TARGET, 20000):
+        title = page.title()
+        body = norm(page.locator('body').inner_text())[:1000]
+        raise RuntimeError(
+            f'진학어플라이 보안 페이지 또는 대상 표 미검출 '
+            f'(title={title!r}, body={body!r})'
+        )
+
+    rows = []
+
+    # Find the table containing the target heading.
+    tables = page.locator('table')
+
     for i in range(tables.count()):
-        table=tables.nth(i)
-        table_text=norm(table.inner_text())
-        if JINHAK_TARGET in table_text or any(n in table_text for n in JINHAK_NAMES):
+        table = tables.nth(i)
+        table_text = norm(table.inner_text())
+
+        if JINHAK_TARGET in table_text or any(
+            n in table_text for n in JINHAK_NAMES
+        ):
             for tr in table.locator('tr').all():
-                cells=text_cells(tr)
-                if len(cells)>=4 and cells[0] in JINHAK_NAMES:
-                    rows.append({'name':cells[0], 'recruit':cells[1], 'applicants':cells[2], 'ratio':cells[3]})
+                cells = text_cells(tr)
+
+                if len(cells) >= 4 and cells[0] in JINHAK_NAMES:
+                    rows.append({
+                        'name': cells[0],
+                        'recruit': cells[1],
+                        'applicants': cells[2],
+                        'ratio': cells[3]
+                    })
+
             if rows:
                 break
+
     if len(rows) < len(JINHAK_NAMES):
-        # Fallback: scan every row on the page for exact target names.
-        rows=[]
+        # Fallback: scan every row on the page.
+        rows = []
+
         for tr in page.locator('tr').all():
-            cells=text_cells(tr)
-            if len(cells)>=4 and cells[0] in JINHAK_NAMES:
-                rows.append({'name':cells[0], 'recruit':cells[1], 'applicants':cells[2], 'ratio':cells[3]})
-    missing=[n for n in JINHAK_NAMES if n not in {r['name'] for r in rows}]
+            cells = text_cells(tr)
+
+            if len(cells) >= 4 and cells[0] in JINHAK_NAMES:
+                rows.append({
+                    'name': cells[0],
+                    'recruit': cells[1],
+                    'applicants': cells[2],
+                    'ratio': cells[3]
+                })
+
+    missing = [
+        n for n in JINHAK_NAMES
+        if n not in {r['name'] for r in rows}
+    ]
+
     if missing:
-        raise RuntimeError('진학어플라이 일부 모집단위를 찾지 못했습니다: '+', '.join(missing))
+        raise RuntimeError(
+            '진학어플라이 일부 모집단위를 찾지 못했습니다: '
+            + ', '.join(missing)
+        )
+
     return rows
 
 
+def uway(page):
+    page.goto(UWAY_URL, wait_until='domcontentloaded', timeout=120000)
+    page.wait_for_timeout(5000)
+
+    if not wait_for_real_content(page, UWAY_TARGET, 20000):
+        raise RuntimeError(
+            f'유웨이 대상 행을 찾지 못했습니다 '
+            f'(title={page.title()!r})'
+        )
+
+    for tr in page.locator('tr').all():
+        cells = text_cells(tr)
+
+        if UWAY_TARGET in cells:
+            if len(cells) >= 6:
+                return {
+                    'name': cells[1],
+                    'recruit': cells[3],
+                    'applicants': cells[4],
+                    'ratio': cells[5]
+                }
+
+    raise RuntimeError('유웨이 리안헤어 항목을 찾지 못했습니다.')
 def uway(page):
     page.goto(url, wait_until="domcontentloaded", timeout=120000)
 page.wait_for_timeout(15000)
